@@ -14,7 +14,7 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import torch
-from pytorch3d.ops import box3d_overlap
+# from pytorch3d.ops import box3d_overlap
 from torch import Tensor
 
 from home_robot.core.interfaces import Observations

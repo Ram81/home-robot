@@ -10,11 +10,8 @@ from typing import Tuple
 
 import numpy as np
 import pandas as pd
-
-from home_robot.utils.constants import (
-    MAX_DEPTH_REPLACEMENT_VALUE,
-    MIN_DEPTH_REPLACEMENT_VALUE,
-)
+from home_robot.utils.constants import (MAX_DEPTH_REPLACEMENT_VALUE,
+                                        MIN_DEPTH_REPLACEMENT_VALUE)
 
 hm3d_to_mp3d_path = Path(__file__).resolve().parent / "matterport_category_mappings.tsv"
 df = pd.read_csv(hm3d_to_mp3d_path, sep="    ", header=0, engine="python")
@@ -730,7 +727,7 @@ class RearrangeDETICCategories(SemanticCategoryMapping):
     @property
     def color_palette(self):
         color_palette = [255, 255, 255] + d3_40_colors_rgb[
-            1 : self.num_sem_categories
+            2 : self.num_sem_categories + 1
         ].flatten().tolist()
         return color_palette
 

@@ -7,10 +7,9 @@ import scipy
 import skimage.morphology
 import torch
 import torch.nn as nn
-from sklearn.cluster import DBSCAN
-
 from home_robot.mapping.semantic.constants import MapConstants as MC
 from home_robot.utils.morphology import binary_dilation
+from sklearn.cluster import DBSCAN
 
 
 class ObjectNavFrontierExplorationPolicy(nn.Module):
@@ -44,9 +43,9 @@ class ObjectNavFrontierExplorationPolicy(nn.Module):
     def goal_update_steps(self):
         return 1
 
-    def reach_single_category(self, map_features, category):
+    def reach_single_category(self, map_features, category, final_instance_map=None):
         # if the goal is found, reach it
-        goal_map, found_goal = self.reach_goal_if_in_map(map_features, category)
+        goal_map, found_goal = self.reach_goal_if_in_map(map_features, category, final_instance_map=final_instance_map)
         # otherwise, do frontier exploration
         goal_map = self.explore_otherwise(map_features, goal_map, found_goal)
         return goal_map, found_goal
@@ -79,6 +78,7 @@ class ObjectNavFrontierExplorationPolicy(nn.Module):
         start_recep_category=None,
         end_recep_category=None,
         nav_to_recep=None,
+        final_instance_map=None,
     ):
         """
         Arguments:
@@ -128,7 +128,7 @@ class ObjectNavFrontierExplorationPolicy(nn.Module):
             goal_category = (
                 object_category if object_category is not None else end_recep_category
             )
-            return self.reach_single_category(map_features, goal_category)
+            return self.reach_single_category(map_features, goal_category, final_instance_map)
 
     def cluster_filtering(self, m):
         # m is a 480x480 goal map
@@ -153,6 +153,17 @@ class ObjectNavFrontierExplorationPolicy(nn.Module):
 
         return m_filtered
 
+    def filter_instance_goals(self, instance_map):
+        objects = skimage.measure.regionprops(instance_map.squeeze(0).cpu().numpy().astype(np.int32))
+        objects_with_label = [(obj.label, obj["area"]) for obj in objects if obj.label != 0]
+        # print([dir(obj) for obj in objects])
+        # print([(obj.label == 0, obj.label) for obj in objects])
+        # print(objects_with_label)
+        objects_with_label.sort(key=lambda x: x[1], reverse=True)
+        if len(objects_with_label) == 0:
+            return torch.zeros_like(instance_map)
+        return instance_map == objects_with_label[0][0]
+
     def reach_goal_if_in_map(
         self,
         map_features,
@@ -161,6 +172,7 @@ class ObjectNavFrontierExplorationPolicy(nn.Module):
         reject_visited_regions=False,
         goal_map=None,
         found_goal=None,
+        final_instance_map=None,
     ):
         """If the desired goal is in the semantic map, reach it."""
         batch_size, _, height, width = map_features.shape
@@ -194,9 +206,17 @@ class ObjectNavFrontierExplorationPolicy(nn.Module):
                         1 - map_features[e, MC.BEEN_CLOSE_MAP, :, :]
                     )
                 # if the desired category is found with required constraints, set goal for navigation
-                if (category_map == 1).sum() > 0:
-                    goal_map[e] = category_map == 1
-                    found_goal_current[e] = True
+
+                if final_instance_map is not None:
+                    filtered_goal = self.filter_instance_goals(final_instance_map[e])
+                    # print("Filtered goal {} - {} - {}".format(filtered_goal.shape, goal_map[e].shape,final_instance_map[e].shape))
+                    if (filtered_goal > 0).sum() > 0:
+                        goal_map[e] = filtered_goal > 0
+                        found_goal_current[e] = True
+                else:
+                    if (category_map == 1).sum() > 0:
+                        goal_map[e] = category_map == 1
+                        found_goal_current[e] = True
         return goal_map, found_goal_current
 
     def get_frontier_map(self, map_features):

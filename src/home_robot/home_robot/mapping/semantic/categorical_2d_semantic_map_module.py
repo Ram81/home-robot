@@ -6,22 +6,22 @@ from collections import defaultdict
 from typing import Optional, Tuple
 
 import cv2
+import home_robot.mapping.map_utils as mu
+import home_robot.utils.depth as du
+import home_robot.utils.pose as pu
+import home_robot.utils.rotation as ru
 import matplotlib.pyplot as plt
 import numpy as np
 import skimage.morphology
 import torch
 import torch.nn as nn
 import trimesh.transformations as tra
+from home_robot.mapping.semantic.constants import MapConstants as MC
+from home_robot.mapping.semantic.instance_tracking_modules import \
+    InstanceMemory
 from skimage import measure
 from torch import IntTensor, Tensor
 from torch.nn import functional as F
-
-import home_robot.mapping.map_utils as mu
-import home_robot.utils.depth as du
-import home_robot.utils.pose as pu
-import home_robot.utils.rotation as ru
-from home_robot.mapping.semantic.constants import MapConstants as MC
-from home_robot.mapping.semantic.instance_tracking_modules import InstanceMemory
 
 # For debugging input and output maps - shows matplotlib visuals
 debug_maps = False
@@ -73,6 +73,7 @@ class Categorical2DSemanticMapModule(nn.Module):
         instance_association: str = "map_overlap",
         dilation_for_instances: int = 5,
         padding_for_instance_overlap: int = 5,
+        record_goal_object_instances: bool = False,
     ):
         """
         Arguments:
@@ -153,6 +154,7 @@ class Categorical2DSemanticMapModule(nn.Module):
         self.instance_memory = instance_memory
         self.max_instances = max_instances
         self.evaluate_instance_tracking = evaluate_instance_tracking
+        self.record_goal_object_instances = record_goal_object_instances
 
     @torch.no_grad()
     def forward(
@@ -168,6 +170,7 @@ class Categorical2DSemanticMapModule(nn.Module):
         init_global_pose: Tensor,
         init_lmb: Tensor,
         init_origins: Tensor,
+        seq_object_goal_category: Optional[Tensor] = None,
     ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor, IntTensor, Tensor]:
         """Update maps and poses with a sequence of observations and generate map
         features at each time step.
@@ -238,6 +241,7 @@ class Categorical2DSemanticMapModule(nn.Module):
         local_map, local_pose = init_local_map.clone(), init_local_pose.clone()
         global_map, global_pose = init_global_map.clone(), init_global_pose.clone()
         lmb, origins = init_lmb.clone(), init_origins.clone()
+        local_instance_map = torch.zeros((init_local_map.shape[0], 1, init_local_map.shape[2], init_local_map.shape[3]), device=init_local_map.device, dtype=init_local_map.dtype)  
         for t in range(sequence_length):
             # Reset map and pose for episodes done at time step t
             for e in range(batch_size):
@@ -252,7 +256,7 @@ class Categorical2DSemanticMapModule(nn.Module):
                         origins,
                         self.map_size_parameters,
                     )
-
+            
             local_map, local_pose = self._update_local_map_and_pose(
                 seq_obs[:, t],
                 seq_pose_delta[:, t],
@@ -260,6 +264,8 @@ class Categorical2DSemanticMapModule(nn.Module):
                 local_pose,
                 seq_camera_poses,
             )
+
+            # Update affordance instances
             for e in range(batch_size):
                 if seq_update_global[e, t]:
                     self._update_global_map_and_pose_for_env(
@@ -272,6 +278,12 @@ class Categorical2DSemanticMapModule(nn.Module):
             seq_origins[:, t] = origins
             seq_map_features[:, t] = self._get_map_features(local_map, global_map)
 
+            for e in range(batch_size):
+                # print("local map shape: {} - {}".format(local_instance_map[e].shape, seq_object_goal_category[e, t]))
+                local_instance_map[e] = self.update_affordance_instances_in_local_map(
+                    local_map[e, MC.NON_SEM_CHANNELS + seq_object_goal_category[e, t]],
+                )
+
         return (
             seq_map_features,
             local_map,
@@ -280,6 +292,7 @@ class Categorical2DSemanticMapModule(nn.Module):
             seq_global_pose,
             seq_lmb,
             seq_origins,
+            local_instance_map,
         )
 
     def _aggregate_instance_map_channels_per_category(
@@ -481,6 +494,8 @@ class Categorical2DSemanticMapModule(nn.Module):
             voxel_channels += num_instance_channels
         if self.evaluate_instance_tracking:
             voxel_channels += self.max_instances + 1
+        if self.record_goal_object_instances:
+            voxel_channels += obs_channels - 4 - self.num_sem_categories
 
         init_grid = torch.zeros(
             batch_size,
@@ -556,12 +571,13 @@ class Categorical2DSemanticMapModule(nn.Module):
         fp_map_pred = fp_map_pred / self.map_pred_threshold
         fp_exp_pred = fp_exp_pred / self.exp_pred_threshold
 
-        num_channels = MC.NON_SEM_CHANNELS + self.num_sem_categories
+        num_channels = MC.NON_SEM_CHANNELS + self.num_sem_categories 
         if self.record_instance_ids:
             num_channels += num_instance_channels
 
         if self.evaluate_instance_tracking:
             num_channels += self.max_instances + 1
+        # num_channels = prev_map.shape[1]
 
         agent_view = torch.zeros(
             batch_size,
@@ -935,6 +951,20 @@ class Categorical2DSemanticMapModule(nn.Module):
                 ] = instances
 
         return global_map
+
+    def cluster_binary_map(self, binary_map):
+        labels = measure.label(
+            binary_map.cpu().numpy(), connectivity=2
+        )  # Perform connected component analysis
+        return torch.tensor(labels, dtype=torch.int64, device=binary_map.device)
+
+    def update_affordance_instances_in_local_map(
+        self, local_map, threshold=0.0
+    ):
+        local_map_rounded = local_map > threshold
+        # local_map_rounded = torch.round(local_map)
+        local_labels = self.cluster_binary_map(local_map_rounded)
+        return local_labels.unsqueeze(0)
 
     def _update_global_map_and_pose_for_env(
         self,

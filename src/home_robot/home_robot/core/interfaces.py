@@ -212,6 +212,7 @@ class Observations:
     # Camera
     rgb: np.ndarray  # (camera_height, camera_width, 3) in [0, 255]
     depth: np.ndarray  # (camera_height, camera_width) in meters
+    surface_normals: np.ndarray  # (camera_height, camera_width) in meters
     xyz: Optional[
         np.ndarray
     ] = None  # (camera_height, camera_width, 3) in camera coordinates

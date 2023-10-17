@@ -6,10 +6,11 @@ from typing import Optional
 
 import numpy as np
 import torch
-
-from home_robot.mapping.map_utils import MapSizeParameters, init_map_and_pose_for_env
+from home_robot.mapping.map_utils import (MapSizeParameters,
+                                          init_map_and_pose_for_env)
 from home_robot.mapping.semantic.constants import MapConstants as MC
-from home_robot.mapping.semantic.instance_tracking_modules import InstanceMemory
+from home_robot.mapping.semantic.instance_tracking_modules import \
+    InstanceMemory
 
 
 class Categorical2DSemanticMapState:
@@ -36,6 +37,7 @@ class Categorical2DSemanticMapState:
         evaluate_instance_tracking: bool = False,
         instance_memory: Optional[InstanceMemory] = None,
         max_instances: int = 0,
+        record_goal_object_instances: bool = False,
     ):
         """
         Arguments:
@@ -61,6 +63,7 @@ class Categorical2DSemanticMapState:
         self.local_map_size_cm = self.global_map_size_cm // self.global_downscaling
         self.global_map_size = self.global_map_size_cm // self.resolution
         self.local_map_size = self.local_map_size_cm // self.resolution
+        self.record_goal_object_instances = record_goal_object_instances
 
         # Map consists of multiple channels (5 NON_SEM_CHANNELS followed by semantic channels) containing the following:
         # 0: Obstacle Map
@@ -69,7 +72,7 @@ class Categorical2DSemanticMapState:
         # 3: Past Agent Locations
         # 4: Regions agent has been close to
         # 5, 6, 7, .., num_sem_categories + 5: Semantic Categories
-        num_channels = self.num_sem_categories + MC.NON_SEM_CHANNELS
+        num_channels = self.num_sem_categories + MC.NON_SEM_CHANNELS # + record_goal_object_instances
         if record_instance_ids:
             # num_sem_categories + 5, ..., 2 * num_sem_categories + 5: Instance ids per semantic category
             num_channels += self.num_sem_categories

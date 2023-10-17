@@ -1,3 +1,4 @@
+name: home-robot
 channels:
   - pytorch
   - pytorch3d

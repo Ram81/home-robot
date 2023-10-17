@@ -150,15 +150,15 @@ class FMMPlanner:
             dist_vis[:, c : 2 * c] = np.flipud(goal_map)
             dist_vis[:, 2 * c :] = np.flipud(self.fmm_dist / self.fmm_dist.max())
 
-            if self.visualize:
-                cv2.imshow("Planner Distance", dist_vis)
-                cv2.waitKey(1)
+            # if self.visualize:
+            #     cv2.imshow("Planner Distance", dist_vis)
+            #     cv2.waitKey(1)
 
-            if self.print_images and timestep is not None:
-                cv2.imwrite(
-                    os.path.join(self.vis_dir, f"planner_snapshot_{timestep}.png"),
-                    (dist_vis * 255).astype(int),
-                )
+            # if self.print_images and timestep is not None:
+            #     cv2.imwrite(
+            #         os.path.join(self.vis_dir, f"planner_snapshot_{timestep}.png"),
+            #         (dist_vis * 255).astype(int),
+            #     )
         return dd
 
     def get_short_term_goal(

@@ -12,7 +12,7 @@ import numpy as np
 import open3d as open3d
 import torch
 import trimesh
-from pytorch3d.structures import Pointclouds
+# from pytorch3d.structures import Pointclouds
 from torch import Tensor
 
 from home_robot.core.interfaces import Observations
@@ -627,6 +627,7 @@ class SparseVoxelMap(object):
     def _show_pytorch3d(self, instances: bool = True, **plot_scene_kwargs):
         from pytorch3d.vis.plotly_vis import AxisArgs, plot_scene
 
+        from pytorch3d.structures import Pointclouds
         from home_robot.utils.bboxes_3d_plotly import plot_scene_with_bboxes
 
         points, _, _, rgb = self.voxel_pcd.get_pointcloud()
